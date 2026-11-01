@@ -1,0 +1,333 @@
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EventFormat {
+  ONLINE
+  OFFLINE
+  HYBRID
+}
+
+enum PriceType {
+  FREE
+  PAID
+  UNKNOWN
+}
+
+enum HackathonStatus {
+  PENDING
+  PUBLISHED
+  REJECTED
+  ARCHIVED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  UNSUBSCRIBED
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum ParserRunStatus {
+  RUNNING
+  SUCCEEDED
+  PARTIAL
+  FAILED
+}
+
+model Role {
+  id        String   @id
+  name      String   @unique
+  users     User[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model User {
+  id                String          @id @default(cuid())
+  name              String?
+  email             String?         @unique
+  emailVerified     DateTime?
+  image             String?
+  roleId            String          @default("user")
+  role              Role            @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  accounts          Account[]
+  sessions          Session[]
+  subscriptions     Subscription[]
+  createdHackathons Hackathon[]     @relation("HackathonCreator")
+  moderationLogs    ModerationLog[] @relation("Moderator")
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([roleId])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Country {
+  id         String      @id @default(cuid())
+  name       String      @unique
+  code       String      @unique @db.VarChar(2)
+  regions    Region[]
+  hackathons Hackathon[]
+}
+
+model Region {
+  id         String      @id @default(cuid())
+  name       String
+  countryId  String
+  country    Country     @relation(fields: [countryId], references: [id], onDelete: Restrict)
+  cities     City[]
+  hackathons Hackathon[]
+
+  @@unique([countryId, name])
+  @@index([countryId])
+}
+
+model City {
+  id         String      @id @default(cuid())
+  name       String
+  regionId   String
+  region     Region      @relation(fields: [regionId], references: [id], onDelete: Restrict)
+  hackathons Hackathon[]
+
+  @@unique([regionId, name])
+  @@index([regionId])
+}
+
+model Organizer {
+  id          String      @id @default(cuid())
+  name        String      @unique
+  websiteUrl  String?
+  description String?     @db.Text
+  logoUrl     String?
+  hackathons  Hackathon[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model Hackathon {
+  id                   String               @id @default(cuid())
+  slug                 String               @unique
+  title                String               @db.VarChar(240)
+  summary              String               @db.VarChar(500)
+  description          String               @db.Text
+  requirements         String?              @db.Text
+  format               EventFormat?
+  priceType            PriceType            @default(UNKNOWN)
+  priceDescription     String?
+  prizeDescription     String?
+  ageMin               Int?
+  ageMax               Int?
+  startsAt             DateTime?
+  endsAt               DateTime?
+  registrationDeadline DateTime?
+  registrationUrl      String?
+  logoUrl              String?
+  status               HackathonStatus      @default(PENDING)
+  viewCount            Int                  @default(0)
+  publishedAt          DateTime?
+  organizerId          String?
+  organizer            Organizer?           @relation(fields: [organizerId], references: [id], onDelete: SetNull)
+  cityId               String?
+  city                 City?                @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  countryId            String?
+  country              Country?             @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  regionId             String?
+  region               Region?              @relation(fields: [regionId], references: [id], onDelete: SetNull)
+  createdById          String?
+  createdBy            User?                @relation("HackathonCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  directions           HackathonDirection[]
+  tags                 HackathonTag[]
+  sources              HackathonSource[]
+  subscriptionMatches  SubscriptionMatch[]
+  moderationLogs       ModerationLog[]
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  @@index([status, startsAt])
+  @@index([status, registrationDeadline])
+  @@index([organizerId])
+  @@index([cityId])
+  @@index([countryId])
+  @@index([regionId])
+  @@index([createdAt])
+}
+
+model Direction {
+  id            String                  @id @default(cuid())
+  name          String                  @unique
+  slug          String                  @unique
+  hackathons    HackathonDirection[]
+  subscriptions SubscriptionDirection[]
+}
+
+model HackathonDirection {
+  hackathonId String
+  directionId String
+  hackathon   Hackathon @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+  direction   Direction @relation(fields: [directionId], references: [id], onDelete: Cascade)
+
+  @@id([hackathonId, directionId])
+  @@index([directionId])
+}
+
+model Tag {
+  id         String         @id @default(cuid())
+  name       String         @unique
+  slug       String         @unique
+  hackathons HackathonTag[]
+}
+
+model HackathonTag {
+  hackathonId String
+  tagId       String
+  hackathon   Hackathon @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+  tag         Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([hackathonId, tagId])
+  @@index([tagId])
+}
+
+model Source {
+  id          String            @id @default(cuid())
+  name        String            @unique
+  providerKey String            @unique
+  baseUrl     String?
+  isActive    Boolean           @default(true)
+  events      HackathonSource[]
+  parserRuns  ParserRun[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+model HackathonSource {
+  id          String    @id @default(cuid())
+  hackathonId String
+  sourceId    String
+  sourceUrl   String
+  externalId  String?
+  rawText     String?   @db.Text
+  lastSeenAt  DateTime  @default(now())
+  hackathon   Hackathon @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+  source      Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, sourceUrl])
+  @@unique([sourceId, externalId])
+  @@index([hackathonId])
+}
+
+model Subscription {
+  id         String                  @id @default(cuid())
+  email      String                  @unique
+  userId     String?
+  user       User?                   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  ageMin     Int
+  ageMax     Int
+  format     EventFormat?
+  status     SubscriptionStatus      @default(ACTIVE)
+  token      String                  @unique @default(cuid())
+  directions SubscriptionDirection[]
+  matches    SubscriptionMatch[]
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+
+  @@index([status, ageMin, ageMax])
+}
+
+model SubscriptionDirection {
+  subscriptionId String
+  directionId    String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  direction      Direction    @relation(fields: [directionId], references: [id], onDelete: Cascade)
+
+  @@id([subscriptionId, directionId])
+  @@index([directionId])
+}
+
+model SubscriptionMatch {
+  id             String         @id @default(cuid())
+  subscriptionId String
+  hackathonId    String
+  status         DeliveryStatus @default(PENDING)
+  attempts       Int            @default(0)
+  lastError      String?        @db.Text
+  sentAt         DateTime?
+  subscription   Subscription   @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  hackathon      Hackathon      @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+  createdAt      DateTime       @default(now())
+
+  @@unique([subscriptionId, hackathonId])
+  @@index([status, createdAt])
+}
+
+model ModerationLog {
+  id          String    @id @default(cuid())
+  hackathonId String
+  moderatorId String?
+  action      String
+  note        String?   @db.Text
+  hackathon   Hackathon @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+  moderator   User?     @relation("Moderator", fields: [moderatorId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+
+  @@index([hackathonId, createdAt])
+}
+
+model ParserRun {
+  id         String          @id @default(cuid())
+  sourceId   String
+  source     Source          @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  status     ParserRunStatus @default(RUNNING)
+  foundCount Int             @default(0)
+  savedCount Int             @default(0)
+  error      String?         @db.Text
+  startedAt  DateTime        @default(now())
+  finishedAt DateTime?
+
+  @@index([sourceId, startedAt])
+}
